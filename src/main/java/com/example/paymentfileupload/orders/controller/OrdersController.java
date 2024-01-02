@@ -33,20 +33,43 @@ public class OrdersController {
     // 실질적으로 결제를 검증하는 메소드
     @RequestMapping("/validation")
     public ResponseEntity paymentValidation(String impUid) throws IOException {
-        String dbPrice = "10000.0";     // 원래는 repository에서 findByName으로 db에서 조회해서 가져와야 하는 값.
-        Map<String, String> paymentResult = ordersService.getPaymentInfo(impUid);
+        Map<String, Object> paymentResult = ordersService.getPaymentInfo(impUid);
 
-        System.out.println("Payment Result: ");
-        for (Map.Entry<String, String> entry : paymentResult.entrySet()) {
-            System.out.println(entry.getKey() + ": " + entry.getValue());
+        if (paymentResult == null || paymentResult.get("amount") == null) {
+            return ResponseEntity.badRequest().body("유효햐지 않은 결제 정보");
         }
 
-        if (dbPrice.equals(paymentResult.get("amount"))) {
+        System.out.println("Payment Result Map: " + paymentResult);
+        System.out.println();
+
+        Double sum = 0.0;
+
+        List<Map<String, String>> products = (List<Map<String, String>>) paymentResult.get("products");
+
+        if (products != null) {
+            for (Map<String, String> product : products) {
+                Long productId = Long.valueOf(product.get("id"));
+                Integer price = ordersService.findProductPriceById(productId);
+
+                if (price != null) {
+                    sum += price.doubleValue();
+                    System.out.println("Product ID: " + productId + ", Price: " + price);
+                }
+            }
+        }
+
+        Double amount = Double.parseDouble(paymentResult.get("amount").toString());
+
+        System.out.println();
+        System.out.println("amount: " + amount);
+        System.out.println("sum: " + sum);
+
+        if (amount != null && sum.equals(amount)) {
             return ResponseEntity.ok().body("ok");
         } else {
             // 환불처리
             String token = ordersService.getToken();
-            ordersService.payMentCancel(token, impUid, paymentResult.get("amount").toString(), "결제 금액 에러");
+            ordersService.payMentCancel(token, impUid, String.valueOf(amount), "결제 금액 에러");
             return ResponseEntity.badRequest().body("error");
         }
     }

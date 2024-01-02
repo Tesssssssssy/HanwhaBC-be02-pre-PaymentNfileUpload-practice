@@ -3,11 +3,14 @@ package com.example.paymentfileupload.orders.service;
 import com.example.paymentfileupload.orders.model.dto.OrdersDtoReq;
 import com.example.paymentfileupload.orders.repository.OrdersRepository;
 import com.example.paymentfileupload.product.model.Product;
+import com.example.paymentfileupload.product.model.dto.ProductDtoRes;
+import com.example.paymentfileupload.product.repository.ProductRepository;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import net.bytebuddy.description.method.MethodDescription;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -24,13 +27,17 @@ import java.util.*;
 public class OrdersService {
     @Value("${portone.imp_key}")
     private String imp_key;
+
     @Value("${portone.imp_secret}")
     private String imp_secret;
-    private OrdersRepository ordersRepository;
-    public OrdersService(OrdersRepository ordersRepository) {
-        this.ordersRepository = ordersRepository;
-    }
 
+    private OrdersRepository ordersRepository;
+    private ProductRepository productRepository;
+
+    public OrdersService(OrdersRepository ordersRepository, ProductRepository productRepository) {
+        this.ordersRepository = ordersRepository;
+        this.productRepository = productRepository;
+    }
 
     // access_token을 받아오는 메소드
     public String getToken() throws IOException {
@@ -69,13 +76,12 @@ public class OrdersService {
 
     // 결제 정보 받아오는 메소드
     @RequestMapping(method = RequestMethod.GET, value = "/get/payInfo")
-    public Map<String, String> getPaymentInfo(String impUid) throws IOException {
+    public Map<String, Object> getPaymentInfo(String impUid) throws IOException {
         String token = getToken();
         HttpsURLConnection conn = null;
 
         // http method, header 설정
-        URL url = new URL("https://api.iamport.kr/payments/" + impUid);
-        // + ""에 imp_uid가 들어가야 함.
+        URL url = new URL("https://api.iamport.kr/payments/" + impUid);        // + ""에 imp_uid가 들어가야 함.
 
         conn = (HttpsURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
@@ -86,30 +92,49 @@ public class OrdersService {
         Gson gson = new Gson();
         String response = gson.fromJson(br.readLine(), Map.class).get("response").toString();
 
-        System.out.println(response.toString());
+        System.out.println("response: " + response.toString());
 
         br.close();
         conn.disconnect();
 
+        Map<String, Object> result = new HashMap<>();
+
         String amount = response.split("amount")[1].split(",")[0].replace("=", "");
         String name = response.split(" name")[1].split(",")[0].replace("=", "");
 
-        String customData = response.split("custom_data")[1].split("customer_uid")[0].replace(", ", "").replace("=", "");
-        System.out.println(customData);
-
-        Map<String, String> result = new HashMap<>();
-
-        Integer sum = 0;
-        String price;
-
-        price = sum.toString();
-
         result.put("amount", amount);
         result.put("name", name);
-        // result.put("price", price);
-        // result.put("custom_data", customData);
+
+        String customData = response.split("custom_data")[1].split("customer_uid")[0].replace(", ", "").replace("=", "");
+        System.out.println("custom_data: " + customData);
+
+        Type productListType = new TypeToken<List<ProductDtoRes>>(){}.getType();
+        List<ProductDtoRes> productList = gson.fromJson(customData, productListType);
+
+        List<Map<String, String>> productsInfo = new ArrayList<>();  // Accumulate product information
+
+        for (ProductDtoRes res : productList) {
+            Map<String, String> productInfo = new HashMap<>();
+            productInfo.put("id", res.getId().toString());
+            productInfo.put("name", res.getName());
+            productInfo.put("price", res.getPrice().toString());
+            productsInfo.add(productInfo);
+        }
+        result.put("products", productsInfo);
 
         return result;
+    }
+
+    public Integer findProductPriceById(Long id) {
+        Optional<Product> result = productRepository.findById(id);
+        if (result.isPresent()) {
+            Product product = result.get();
+            Integer price = product.getPrice();
+
+            return price;
+        } else {
+            return null;
+        }
     }
 
 
